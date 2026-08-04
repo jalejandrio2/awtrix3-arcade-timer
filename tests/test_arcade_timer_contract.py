@@ -37,6 +37,14 @@ def test_recovery_and_capability_contract() -> None:
     assert "deadlineEpoch = expiredEpoch;" in TIMER
 
 
+def test_completion_alarm_auto_dismisses_after_ten_seconds() -> None:
+    assert "kAlarmDurationMs = 10 * 1000" in TIMER
+    assert "ringingEndsMs = millis() + kAlarmDurationMs" in TIMER
+    assert "nowMs - ringingEndsMs" in TIMER
+    assert "dismiss();" in TIMER
+    assert 'kFirmwareVersion = "0.98-arcade.2"' in TIMER
+
+
 def test_upstream_ota_cannot_replace_custom_firmware() -> None:
     mqtt = (ROOT / "src" / "MQTTManager.cpp").read_text(encoding="utf-8")
     updater = (ROOT / "src" / "UpdateManager.cpp").read_text(encoding="utf-8")
