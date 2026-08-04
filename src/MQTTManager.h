@@ -16,6 +16,7 @@ public:
     void tick();
     void rawPublish(const char *prefix, const char *topic, const char *payload);
     void publish(const char *topic, const char *payload);
+    void publishRetained(const char *topic, const char *payload);
     void setCurrentApp(String);
     void sendStats();
     void sendButton(byte, bool);

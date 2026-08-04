@@ -22,6 +22,7 @@
 #include <HTTPClient.h>
 #include "base64.hpp"
 #include "Games/GameManager.h"
+#include "ArcadeTimer.h"
 
 unsigned long lastArtnetStatusTime = 0;
 const int numberOfChannels = 256 * 3;
@@ -1102,6 +1103,7 @@ void DisplayManager_::loadNativeApps()
 
   updateApp("Time", TimeApp, SHOW_TIME, 0);
   updateApp("Date", DateApp, SHOW_DATE, 1);
+  updateApp("ArcadeTimer", ArcadeTimerApp, true, 2);
 
   if (SENSOR_READING)
   {
@@ -1213,6 +1215,7 @@ bool universe2_complete = false;
 
 void DisplayManager_::tick()
 {
+  ArcadeTimer.tick();
   if (GAME_ACTIVE)
   {
     GameManager.tick();
@@ -1230,6 +1233,12 @@ void DisplayManager_::tick()
   else if (MOODLIGHT_MODE)
   {
     // handled by the moodlight function
+  }
+  else if (ArcadeTimer.ownsDisplay())
+  {
+    ArcadeTimer.render(matrix);
+    matrix->show();
+    memcpy(ledsCopy, leds, sizeof(leds));
   }
   else
   {
@@ -1535,6 +1544,10 @@ std::pair<String, AppCallback> getNativeAppByName(const String &appName)
   else if (appName == "Date")
   {
     return std::make_pair("Date", DateApp);
+  }
+  else if (appName == "ArcadeTimer")
+  {
+    return std::make_pair("ArcadeTimer", ArcadeTimerApp);
   }
   else if (appName == "Temperature")
   {

@@ -18,6 +18,7 @@
 #include <MedianFilterLib.h>
 #include <MeanFilterLib.h>
 #include <Games/GameManager.h>
+#include "ArcadeTimer.h"
 const int buzzerPin = 2;       // Buzzer an GPIO2
 const int baudRate = 50;       // Nachrichtenübertragungsrate
 const char *message = "HELLO"; // Die Nachricht, die gesendet werden soll
@@ -131,6 +132,8 @@ PeripheryManager_ &PeripheryManager = PeripheryManager.getInstance();
 
 void left_button_pressed()
 {
+    if (ArcadeTimer.handleLeft())
+        return;
     if (!BLOCK_NAVIGATION)
     {
         if (DFPLAYER_ACTIVE)
@@ -150,6 +153,8 @@ void left_button_pressed()
 
 void right_button_pressed()
 {
+    if (ArcadeTimer.handleRight())
+        return;
     if (!BLOCK_NAVIGATION)
     {
         if (DFPLAYER_ACTIVE)
@@ -169,21 +174,9 @@ void right_button_pressed()
 
 void select_button_pressed()
 {
-    if (!BLOCK_NAVIGATION)
-    {
-        if (DFPLAYER_ACTIVE)
-            PeripheryManager.playFromFile(DFMINI_MP3_CLICK);
-
-        DisplayManager.selectButton();
-        MenuManager.selectButton();
-        if (DEBUG_MODE)
-            DEBUG_PRINTLN(F("Select button clicked"));
-    }
-    else
-    {
-        if (DEBUG_MODE)
-            DEBUG_PRINTLN(F("Select button clicked but blocked"));
-    }
+    ArcadeTimer.handleCenter();
+    if (DEBUG_MODE)
+        DEBUG_PRINTLN(F("Select button routed to native timer"));
 }
 
 void reset_button_pressed_long()
@@ -194,43 +187,18 @@ void reset_button_pressed_long()
 
 void select_button_pressed_long()
 {
-    if (DFPLAYER_ACTIVE)
-        PeripheryManager.playFromFile(DFMINI_MP3_CLICK);
-    if (AP_MODE)
-    {
-        ++MATRIX_LAYOUT;
-        if (MATRIX_LAYOUT < 0)
-            MATRIX_LAYOUT = 2;
-        saveSettings();
-        ESP.restart();
-    }
-    else if (!BLOCK_NAVIGATION)
-    {
-        MenuManager.selectButtonLong();
-        DisplayManager.selectButtonLong();
-        if (DEBUG_MODE)
-            DEBUG_PRINTLN(F("Select button pressed long"));
-    }
+    // Center is reserved for the native timer. Factory reset remains on the
+    // dedicated reset control.
+    if (DEBUG_MODE)
+        DEBUG_PRINTLN(F("Select long press ignored by native timer firmware"));
 }
 
 void select_button_double()
 {
+    // Cancellation is detected from the two normal press events so the first
+    // press stays immediate (pause/resume) and the second cancels within 800ms.
     if (DEBUG_MODE)
-        DEBUG_PRINTLN(F("Select button double pressed"));
-    if (!BLOCK_NAVIGATION)
-    {
-        if (DFPLAYER_ACTIVE)
-            PeripheryManager.playFromFile(DFMINI_MP3_CLICK);
-
-        if (MATRIX_OFF)
-        {
-            DisplayManager.setPower(true);
-        }
-        else
-        {
-            DisplayManager.setPower(false);
-        }
-    }
+        DEBUG_PRINTLN(F("Hardware double callback ignored; timer handles press pair"));
 }
 
 void PeripheryManager_::playBootSound()
