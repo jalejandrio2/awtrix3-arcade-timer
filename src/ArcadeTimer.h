@@ -58,6 +58,7 @@ private:
     bool recoverable = false;
     bool alarmEnabled = true;
     bool alarmPlaying = false;
+    uint32_t ringingEndsMs = 0;
     bool testAlarmActive = false;
     uint32_t testAlarmEndsMs = 0;
     String animationStyle = "playful_arcade";

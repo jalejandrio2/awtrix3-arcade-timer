@@ -11,11 +11,15 @@ and retains the upstream CC BY-NC-SA 4.0 license.
 | Idle | Previous page | Start the configured timer from any page | Next page |
 | Running | Minus one minute; finish if one minute or less remains | Pause; second press within 800 ms cancels | Add one minute |
 | Paused | Minus one minute; finish if one minute or less remains | Resume; second press within 800 ms cancels | Add one minute |
-| Ringing | No action | Stop the alarm and reset | No action |
+| Ringing | No action | Stop the alarm and reset early | No action |
 
 Button bounce below 120 ms is ignored. While active, the timer owns the display
 and normal page rotation is suspended. The countdown uses the ESP32 monotonic
 clock and does not depend on MQTT updates.
+
+At expiry, the local buzzer and completion animation run for at most ten
+seconds. Center dismisses them early; otherwise the timer resets itself and
+returns to normal rotation automatically.
 
 ## MQTT contract
 

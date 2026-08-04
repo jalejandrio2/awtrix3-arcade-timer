@@ -13,10 +13,11 @@ namespace
 {
 constexpr uint32_t kDebounceMs = 120;
 constexpr uint32_t kDoublePressMs = 800;
+constexpr uint32_t kAlarmDurationMs = 10 * 1000;
 constexpr uint32_t kMaximumSeconds = 120 * 60;
 constexpr time_t kValidEpoch = 1700000000;
 constexpr time_t kRecoveryWindowSeconds = 10 * 60;
-constexpr const char *kFirmwareVersion = "0.98-arcade.1";
+constexpr const char *kFirmwareVersion = "0.98-arcade.2";
 
 Preferences timerPreferences;
 
@@ -152,6 +153,7 @@ void ArcadeTimerManager::tick()
             expiredEpoch = deadlineEpoch;
             state = ArcadeTimerState::Ringing;
             pausedSeconds = 0;
+            ringingEndsMs = nowMs + kAlarmDurationMs;
         }
         else
         {
@@ -183,6 +185,10 @@ void ArcadeTimerManager::tick()
 
     if (testAlarmActive && static_cast<int32_t>(nowMs - testAlarmEndsMs) >= 0)
         stopTestAlarm();
+
+    if (state == ArcadeTimerState::Ringing &&
+        static_cast<int32_t>(nowMs - ringingEndsMs) >= 0)
+        dismiss();
 
     updateAlarm();
 }
@@ -247,6 +253,7 @@ void ArcadeTimerManager::cancel()
 void ArcadeTimerManager::complete()
 {
     state = ArcadeTimerState::Ringing;
+    ringingEndsMs = millis() + kAlarmDurationMs;
     pausedSeconds = 0;
     expiredEpoch = deadlineEpoch > 0 ? deadlineEpoch : (timeValid() ? time(nullptr) : 0);
     deadlineUs = 0;
@@ -260,6 +267,7 @@ void ArcadeTimerManager::dismiss()
 {
     PeripheryManager.stopSound();
     alarmPlaying = false;
+    ringingEndsMs = 0;
     state = ArcadeTimerState::Idle;
     totalSeconds = defaultSeconds;
     pausedSeconds = defaultSeconds;
@@ -480,6 +488,8 @@ void ArcadeTimerManager::restore()
     {
         deadlineEpoch = expiredEpoch;
         state = expiredEpoch > 0 ? ArcadeTimerState::Recovering : ArcadeTimerState::Ringing;
+        if (state == ArcadeTimerState::Ringing)
+            ringingEndsMs = millis() + kAlarmDurationMs;
     }
     else if (state != ArcadeTimerState::Paused)
         state = ArcadeTimerState::Idle;
