@@ -9,6 +9,7 @@
 #include "PeripheryManager.h"
 #include "UpdateManager.h"
 #include "PowerManager.h"
+#include "ArcadeTimer.h"
 
 const uint16_t PORT = 1883;
 
@@ -50,6 +51,18 @@ void processMqttMessage(const String &strTopic, const String &payloadCopy)
 
     ++RECEIVED_MESSAGES;
 
+    if (strTopic.equals(MQTT_PREFIX + "/timer/config"))
+    {
+        ArcadeTimer.applyConfig(payloadCopy.c_str());
+        return;
+    }
+
+    if (strTopic.equals(MQTT_PREFIX + "/timer/test_alarm"))
+    {
+        ArcadeTimer.testAlarm(payloadCopy.c_str());
+        return;
+    }
+
     if (strTopic.equals(MQTT_PREFIX + "/notify"))
     {
         if (payloadCopy[0] != '{' || payloadCopy[payloadCopy.length() - 1] != '}')
@@ -68,10 +81,8 @@ void processMqttMessage(const String &strTopic, const String &payloadCopy)
 
     if (strTopic.equals(MQTT_PREFIX + "/doupdate"))
     {
-        if (UpdateManager.checkUpdate(true))
-        {
-            UpdateManager.updateFirmware();
-        }
+        if (DEBUG_MODE)
+            DEBUG_PRINTLN(F("Remote upstream update disabled for arcade firmware"));
         return;
     }
 
@@ -413,6 +424,9 @@ void onMqttConnected()
         delay(30);
     }
 
+    mqtt.subscribe((MQTT_PREFIX + "/timer/config").c_str());
+    mqtt.subscribe((MQTT_PREFIX + "/timer/test_alarm").c_str());
+
     for (const auto &topic : topicsToSubscribe)
     {
         mqtt.subscribe(topic.c_str());
@@ -432,6 +446,7 @@ void onMqttConnected()
     MQTTManager.publish("stats/device", "online");
 
     connected = true;
+    ArcadeTimer.onMqttConnected();
 }
 
 bool MQTTManager_::subscribe(const char *topic)
@@ -760,6 +775,19 @@ void MQTTManager_::publish(const char *topic, const char *payload)
         return;
 
     mqtt.publish(result, payload, false);
+}
+
+void MQTTManager_::publishRetained(const char *topic, const char *payload)
+{
+    char result[100];
+    strcpy(result, MQTT_PREFIX.c_str());
+    strcat(result, "/");
+    strcat(result, topic);
+
+    if (!mqtt.isConnected())
+        return;
+
+    mqtt.publish(result, payload, true);
 }
 
 void MQTTManager_::rawPublish(const char *prefix, const char *topic, const char *payload)

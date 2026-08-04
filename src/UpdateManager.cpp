@@ -57,6 +57,11 @@ void update_error(int err)
 
 void UpdateManager_::updateFirmware()
 {
+    UPDATE_AVAILABLE = false;
+    if (DEBUG_MODE)
+        DEBUG_PRINTLN(F("Upstream OTA is locked for 0.98-arcade.1"));
+    return;
+
     WiFiClientSecure client;
     client.setCACert(rootCACertificate);
 
@@ -84,6 +89,17 @@ void UpdateManager_::updateFirmware()
 
 bool UpdateManager_::checkUpdate(bool withScreen)
 {
+    UPDATE_AVAILABLE = false;
+    if (withScreen)
+    {
+        DisplayManager.clear();
+        DisplayManager.resetTextColor();
+        DisplayManager.printText(0, 6, "OTA LOCK", true, true);
+        DisplayManager.show();
+        delay(1000);
+    }
+    return false;
+
     if (withScreen)
     {
         DisplayManager.clear();

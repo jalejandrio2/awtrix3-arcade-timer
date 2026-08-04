@@ -11,6 +11,7 @@
 #include "MQTTManager.h"
 #include "Overlays.h"
 #include "timer.h"
+#include "ArcadeTimer.h"
 
 const uint8_t bigdigits_mask[12][7] = {
     {132, 48, 48, 48, 48, 48, 132},      // 0
@@ -100,6 +101,15 @@ const char *getTimeFormat()
             return TIME_FORMAT.c_str();
         }
     }
+}
+
+void ArcadeTimerApp(FastLED_NeoMatrix *matrix, MatrixDisplayUiState *state, int16_t x, int16_t y, GifPlayer *gifPlayer)
+{
+    if (notifyFlag || ArcadeTimer.ownsDisplay())
+        return;
+    CURRENT_APP = "ArcadeTimer";
+    currentCustomApp = "";
+    ArcadeTimer.render(matrix, x, y, true);
 }
 
 void TimeApp(FastLED_NeoMatrix *matrix, MatrixDisplayUiState *state, int16_t x, int16_t y, GifPlayer *gifPlayer)

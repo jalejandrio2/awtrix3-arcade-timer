@@ -1,0 +1,38 @@
+name: Release firmware
+
+on:
+  push:
+    tags:
+      - "v*-arcade.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install pinned tools
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Test and build
+        run: |
+          pytest -q
+          pio run --environment ulanzi
+          python scripts/check_firmware.py .pio/build/ulanzi/firmware.bin --manifest firmware-manifest.json
+
+      - name: Publish immutable release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            .pio/build/ulanzi/firmware.bin
+            firmware-manifest.json

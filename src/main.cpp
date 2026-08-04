@@ -39,6 +39,7 @@
 #include "Globals.h"
 #include "UpdateManager.h"
 #include "timer.h"
+#include "ArcadeTimer.h"
 
 TaskHandle_t taskHandle;
 volatile bool StopTask = false;
@@ -69,6 +70,7 @@ void setup()
   PeripheryManager.setup();
   ServerManager.loadSettings();
   DisplayManager.setup();
+  ArcadeTimer.setup();
   DisplayManager.HSVtext(9, 6, VERSION, true, 0);
   delay(500);
   xTaskCreatePinnedToCore(BootAnimation, "Task", 10000, NULL, 1, &taskHandle, 0);
