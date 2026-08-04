@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TIMER = (ROOT / "src" / "ArcadeTimer.cpp").read_text(encoding="utf-8")
 DISPLAY = (ROOT / "src" / "DisplayManager.cpp").read_text(encoding="utf-8")
 BUTTONS = (ROOT / "src" / "PeripheryManager.cpp").read_text(encoding="utf-8")
+MANIFEST_BUILDER = (ROOT / "scripts" / "check_firmware.py").read_text(encoding="utf-8")
 
 
 def test_button_timing_and_adjustments_are_device_local() -> None:
@@ -43,6 +44,7 @@ def test_completion_alarm_auto_dismisses_after_ten_seconds() -> None:
     assert "nowMs - ringingEndsMs" in TIMER
     assert "dismiss();" in TIMER
     assert 'kFirmwareVersion = "0.98-arcade.2"' in TIMER
+    assert '"version": "0.98-arcade.2"' in MANIFEST_BUILDER
 
 
 def test_upstream_ota_cannot_replace_custom_firmware() -> None:
