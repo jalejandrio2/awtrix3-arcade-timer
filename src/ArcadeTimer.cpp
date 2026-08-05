@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "Globals.h"
+#include "DisplayManager.h"
 #include "MQTTManager.h"
 #include "PeripheryManager.h"
 
@@ -17,7 +18,7 @@ constexpr uint32_t kAlarmDurationMs = 10 * 1000;
 constexpr uint32_t kMaximumSeconds = 120 * 60;
 constexpr time_t kValidEpoch = 1700000000;
 constexpr time_t kRecoveryWindowSeconds = 10 * 60;
-constexpr const char *kFirmwareVersion = "0.98-arcade.2";
+constexpr const char *kFirmwareVersion = "0.98-arcade.3";
 
 Preferences timerPreferences;
 
@@ -133,6 +134,11 @@ bool ArcadeTimerManager::ownsDisplay() const
     return state != ArcadeTimerState::Idle || feedback != Feedback::None || testAlarmActive;
 }
 
+bool ArcadeTimerManager::protectsDisplayPower() const
+{
+    return restoreDisplayOff && state != ArcadeTimerState::Idle;
+}
+
 void ArcadeTimerManager::tick()
 {
     uint32_t nowMs = millis();
@@ -195,6 +201,9 @@ void ArcadeTimerManager::tick()
 
 void ArcadeTimerManager::start()
 {
+    restoreDisplayOff = MATRIX_OFF;
+    if (restoreDisplayOff)
+        DisplayManager.setPower(true);
     totalSeconds = defaultSeconds;
     pausedSeconds = defaultSeconds;
     deadlineUs = esp_timer_get_time() + static_cast<int64_t>(defaultSeconds) * 1000000;
@@ -233,11 +242,11 @@ void ArcadeTimerManager::resume()
     publishState(true);
 }
 
-void ArcadeTimerManager::cancel()
+void ArcadeTimerManager::resetReady()
 {
     PeripheryManager.stopSound();
     alarmPlaying = false;
-    state = ArcadeTimerState::Idle;
+    state = ArcadeTimerState::Paused;
     totalSeconds = defaultSeconds;
     pausedSeconds = defaultSeconds;
     deadlineUs = 0;
@@ -245,9 +254,10 @@ void ArcadeTimerManager::cancel()
     expiredEpoch = 0;
     recoverable = false;
     centerCandidate = false;
-    setFeedback(Feedback::Cancel, 450);
+    feedback = Feedback::None;
     persist();
     publishState(true);
+    MQTTManager.setCurrentApp("ArcadeTimer");
 }
 
 void ArcadeTimerManager::complete()
@@ -265,6 +275,7 @@ void ArcadeTimerManager::complete()
 
 void ArcadeTimerManager::dismiss()
 {
+    bool shouldRestoreDisplayOff = restoreDisplayOff;
     PeripheryManager.stopSound();
     alarmPlaying = false;
     ringingEndsMs = 0;
@@ -275,9 +286,12 @@ void ArcadeTimerManager::dismiss()
     deadlineEpoch = 0;
     expiredEpoch = 0;
     recoverable = false;
+    restoreDisplayOff = false;
     centerCandidate = false;
     persist();
     publishState(true);
+    if (shouldRestoreDisplayOff)
+        DisplayManager.setPower(false);
 }
 
 void ArcadeTimerManager::adjust(int32_t seconds)
@@ -331,7 +345,7 @@ bool ArcadeTimerManager::handleCenter()
         return true;
     if (centerCandidate && nowMs - lastCenterMs <= kDoublePressMs)
     {
-        cancel();
+        resetReady();
         return true;
     }
     if (state == ArcadeTimerState::Running)
@@ -461,6 +475,7 @@ void ArcadeTimerManager::persist()
     timerPreferences.putBool("recoverable", recoverable);
     timerPreferences.putUInt("config_rev", configRevision);
     timerPreferences.putBool("alarm", alarmEnabled);
+    timerPreferences.putBool("restore_off", restoreDisplayOff);
     timerPreferences.putString("animation", animationStyle);
     timerPreferences.putString("melody", melody);
     timerPreferences.end();
@@ -477,6 +492,7 @@ void ArcadeTimerManager::restore()
     recoverable = timerPreferences.getBool("recoverable", false);
     configRevision = timerPreferences.getUInt("config_rev", 0);
     alarmEnabled = timerPreferences.getBool("alarm", true);
+    restoreDisplayOff = timerPreferences.getBool("restore_off", false);
     animationStyle = timerPreferences.getString("animation", "playful_arcade");
     melody = timerPreferences.getString("melody", "arcade");
     state = static_cast<ArcadeTimerState>(timerPreferences.getUChar("state", 0));
@@ -497,7 +513,10 @@ void ArcadeTimerManager::restore()
     {
         totalSeconds = defaultSeconds;
         pausedSeconds = defaultSeconds;
+        restoreDisplayOff = false;
     }
+    else if (restoreDisplayOff)
+        DisplayManager.setPower(true);
 }
 
 void ArcadeTimerManager::publishCapability()
@@ -508,7 +527,7 @@ void ArcadeTimerManager::publishCapability()
     doc["firmware"] = kFirmwareVersion;
     doc["max_minutes"] = 120;
     JsonArray features = doc.createNestedArray("features");
-    for (const char *feature : {"local_countdown", "local_buttons", "local_alarm", "plus_one", "minus_one", "recovery"})
+    for (const char *feature : {"local_countdown", "local_buttons", "local_alarm", "plus_one", "minus_one", "recovery", "wake_display_restore"})
         features.add(feature);
     String payload;
     serializeJson(doc, payload);
@@ -529,6 +548,7 @@ void ArcadeTimerManager::publishState(bool retained)
     else
         doc["deadline_epoch"] = nullptr;
     doc["recoverable"] = recoverable;
+    doc["restore_display_off"] = restoreDisplayOff;
     doc["config_revision"] = configRevision;
     doc["firmware"] = kFirmwareVersion;
     doc["updated_at_epoch"] = timeValid() ? static_cast<int64_t>(time(nullptr)) : 0;
@@ -661,7 +681,7 @@ void ArcadeTimerManager::drawCompletion(FastLED_NeoMatrix *matrix, int16_t x, in
 void ArcadeTimerManager::drawFeedback(FastLED_NeoMatrix *matrix, int16_t x, int16_t y)
 {
     uint32_t elapsed = millis() - feedbackStartedMs;
-    if (feedback == Feedback::Cancel)
+    if (feedback == Feedback::Reset)
     {
         uint32_t divisor = feedbackDurationMs == 0 ? 1 : feedbackDurationMs;
         int width = static_cast<int>((elapsed * 32) / divisor);

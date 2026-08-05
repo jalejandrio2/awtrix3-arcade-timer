@@ -22,7 +22,7 @@ def validate(path: Path) -> dict[str, object]:
         )
     return {
         "schema": 1,
-        "version": "0.98-arcade.2",
+        "version": "0.98-arcade.3",
         "base_awtrix_commit": "b8548eb4fdc8dac3fe40e9582177ec5c738530ba",
         "flash_offset": "0x10000",
         "size": len(data),

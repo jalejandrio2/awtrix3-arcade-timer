@@ -59,7 +59,7 @@ void UpdateManager_::updateFirmware()
 {
     UPDATE_AVAILABLE = false;
     if (DEBUG_MODE)
-        DEBUG_PRINTLN(F("Upstream OTA is locked for 0.98-arcade.2"));
+        DEBUG_PRINTLN(F("Upstream OTA is locked for 0.98-arcade.3"));
     return;
 
     WiFiClientSecure client;

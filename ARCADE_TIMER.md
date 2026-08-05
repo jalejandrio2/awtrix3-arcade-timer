@@ -9,8 +9,8 @@ and retains the upstream CC BY-NC-SA 4.0 license.
 | State | Left | Center | Right |
 |---|---|---|---|
 | Idle | Previous page | Start the configured timer from any page | Next page |
-| Running | Minus one minute; finish if one minute or less remains | Pause; second press within 800 ms cancels | Add one minute |
-| Paused | Minus one minute; finish if one minute or less remains | Resume; second press within 800 ms cancels | Add one minute |
+| Running | Minus one minute; finish if one minute or less remains | Pause; second press within 800 ms resets to the configured time and waits | Add one minute |
+| Paused | Minus one minute; finish if one minute or less remains | Resume; second press within 800 ms resets to the configured time and waits | Add one minute |
 | Ringing | No action | Stop the alarm and reset early | No action |
 
 Button bounce below 120 ms is ignored. While active, the timer owns the display
@@ -21,6 +21,11 @@ At expiry, the local buzzer and completion animation run for at most ten
 seconds. Center dismisses them early; otherwise the timer resets itself and
 returns to normal rotation automatically.
 
+When center starts the timer while the matrix is off, the firmware wakes the
+matrix and protects it from screen-off commands for the active timer session.
+After the alarm finishes or is dismissed, the matrix returns to off. Timers
+started with the matrix already on leave it on after completion.
+
 ## MQTT contract
 
 All topics are below the device's configured AWTRIX prefix:
@@ -29,8 +34,8 @@ All topics are below the device's configured AWTRIX prefix:
   style, melody, and alarm enabled state.
 - `timer/test_alarm` input: starts a five-second local alarm test while idle.
 - `stats/timer/capability` retained output: device-authority handshake.
-- `stats/timer` output: timer state, monotonic sequence, remaining time, and
-  recoverable epoch deadline.
+- `stats/timer` output: timer state, monotonic sequence, remaining time,
+  recoverable epoch deadline, and whether the display must return to off.
 - `stats/timer/config` retained output: applied/rejected configuration revision.
 
 The timer persists state in ESP32 Preferences. A running deadline resumes after

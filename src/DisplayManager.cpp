@@ -1754,6 +1754,12 @@ void DisplayManager_::showSleepAnimation()
 
 void DisplayManager_::setPower(bool state)
 {
+  if (!state && ArcadeTimer.protectsDisplayPower())
+  {
+    if (DEBUG_MODE)
+      DEBUG_PRINTLN(F("Screen-off command deferred while the native timer owns a night wake"));
+    return;
+  }
   if (state)
   {
     MATRIX_OFF = false;

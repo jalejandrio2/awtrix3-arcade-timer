@@ -15,6 +15,9 @@ def test_button_timing_and_adjustments_are_device_local() -> None:
     assert "adjust(60);" in TIMER
     assert "remaining <= static_cast<uint32_t>(-seconds)" in TIMER
     assert "ArcadeTimer.handleCenter();" in BUTTONS
+    assert "resetReady();" in TIMER
+    assert "state = ArcadeTimerState::Paused;" in TIMER
+    assert 'MQTTManager.setCurrentApp("ArcadeTimer");' in TIMER
 
 
 def test_timer_owns_display_before_normal_rotation() -> None:
@@ -32,6 +35,7 @@ def test_recovery_and_capability_contract() -> None:
         "plus_one",
         "minus_one",
         "recovery",
+        "wake_display_restore",
     ):
         assert f'"{feature}"' in TIMER
     assert "kRecoveryWindowSeconds = 10 * 60" in TIMER
@@ -43,8 +47,17 @@ def test_completion_alarm_auto_dismisses_after_ten_seconds() -> None:
     assert "ringingEndsMs = millis() + kAlarmDurationMs" in TIMER
     assert "nowMs - ringingEndsMs" in TIMER
     assert "dismiss();" in TIMER
-    assert 'kFirmwareVersion = "0.98-arcade.2"' in TIMER
-    assert '"version": "0.98-arcade.2"' in MANIFEST_BUILDER
+    assert 'kFirmwareVersion = "0.98-arcade.3"' in TIMER
+    assert '"version": "0.98-arcade.3"' in MANIFEST_BUILDER
+
+
+def test_timer_wakes_and_restores_an_initially_dark_display() -> None:
+    assert "restoreDisplayOff = MATRIX_OFF;" in TIMER
+    assert "DisplayManager.setPower(true);" in TIMER
+    assert 'doc["restore_display_off"] = restoreDisplayOff;' in TIMER
+    assert 'timerPreferences.putBool("restore_off", restoreDisplayOff);' in TIMER
+    assert "ArcadeTimer.protectsDisplayPower()" in DISPLAY
+    assert "DisplayManager.setPower(false);" in TIMER
 
 
 def test_upstream_ota_cannot_replace_custom_firmware() -> None:
