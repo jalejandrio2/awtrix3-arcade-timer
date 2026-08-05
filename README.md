@@ -9,7 +9,8 @@
 
 > **Arcade timer fork:** This repository is an attributed AWTRIX 3 `0.98` fork
 > that adds a device-local TC001 countdown, physical-button controls, power-loss
-> recovery, local animations, and a local buzzer alarm. See
+> recovery, local animations, a local buzzer alarm, and temporary display wake
+> with automatic off-state restoration. See
 > [ARCADE_TIMER.md](ARCADE_TIMER.md) for its behavior and MQTT contract.
  
 <div align="center">

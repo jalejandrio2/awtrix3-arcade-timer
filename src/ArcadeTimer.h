@@ -20,6 +20,7 @@ public:
     void tick();
     void render(FastLED_NeoMatrix *matrix, int16_t x = 0, int16_t y = 0, bool idlePage = false);
     bool ownsDisplay() const;
+    bool protectsDisplayPower() const;
     bool handleCenter();
     bool handleLeft();
     bool handleRight();
@@ -36,7 +37,7 @@ private:
         Resume,
         PlusOne,
         MinusOne,
-        Cancel
+        Reset
     };
 
     ArcadeTimerState state = ArcadeTimerState::Idle;
@@ -58,6 +59,7 @@ private:
     bool recoverable = false;
     bool alarmEnabled = true;
     bool alarmPlaying = false;
+    bool restoreDisplayOff = false;
     uint32_t ringingEndsMs = 0;
     bool testAlarmActive = false;
     uint32_t testAlarmEndsMs = 0;
@@ -69,7 +71,7 @@ private:
     void start();
     void pause();
     void resume();
-    void cancel();
+    void resetReady();
     void complete();
     void dismiss();
     void adjust(int32_t seconds);
