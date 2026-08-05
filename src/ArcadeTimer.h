@@ -22,6 +22,7 @@ public:
     bool ownsDisplay() const;
     bool protectsDisplayPower() const;
     bool handleCenter();
+    bool handleCenterLong();
     bool handleLeft();
     bool handleRight();
     void applyConfig(const char *json);

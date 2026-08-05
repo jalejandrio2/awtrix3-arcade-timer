@@ -187,10 +187,9 @@ void reset_button_pressed_long()
 
 void select_button_pressed_long()
 {
-    // Center is reserved for the native timer. Factory reset remains on the
-    // dedicated reset control.
+    ArcadeTimer.handleCenterLong();
     if (DEBUG_MODE)
-        DEBUG_PRINTLN(F("Select long press ignored by native timer firmware"));
+        DEBUG_PRINTLN(F("Select long press exits native timer"));
 }
 
 void select_button_double()

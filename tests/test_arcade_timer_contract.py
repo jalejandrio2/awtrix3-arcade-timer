@@ -15,6 +15,11 @@ def test_button_timing_and_adjustments_are_device_local() -> None:
     assert "adjust(60);" in TIMER
     assert "remaining <= static_cast<uint32_t>(-seconds)" in TIMER
     assert "ArcadeTimer.handleCenter();" in BUTTONS
+    assert "ArcadeTimer.handleCenterLong();" in BUTTONS
+    assert "button_select.onPressedFor(1000, select_button_pressed_long);" in BUTTONS
+    assert "bool ArcadeTimerManager::handleCenterLong()" in TIMER
+    assert "handleCenterLong()\n{\n    if (state == ArcadeTimerState::Idle" in TIMER
+    assert "dismiss();\n    return true;" in TIMER
     assert "resetReady();" in TIMER
     assert "state = ArcadeTimerState::Paused;" in TIMER
     assert 'MQTTManager.setCurrentApp("ArcadeTimer");' in TIMER
@@ -36,6 +41,7 @@ def test_recovery_and_capability_contract() -> None:
         "minus_one",
         "recovery",
         "wake_display_restore",
+        "hold_to_exit",
     ):
         assert f'"{feature}"' in TIMER
     assert "kRecoveryWindowSeconds = 10 * 60" in TIMER
@@ -47,8 +53,8 @@ def test_completion_alarm_auto_dismisses_after_ten_seconds() -> None:
     assert "ringingEndsMs = millis() + kAlarmDurationMs" in TIMER
     assert "nowMs - ringingEndsMs" in TIMER
     assert "dismiss();" in TIMER
-    assert 'kFirmwareVersion = "0.98-arcade.3"' in TIMER
-    assert '"version": "0.98-arcade.3"' in MANIFEST_BUILDER
+    assert 'kFirmwareVersion = "0.98-arcade.4"' in TIMER
+    assert '"version": "0.98-arcade.4"' in MANIFEST_BUILDER
 
 
 def test_timer_wakes_and_restores_an_initially_dark_display() -> None:

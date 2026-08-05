@@ -18,7 +18,7 @@ constexpr uint32_t kAlarmDurationMs = 10 * 1000;
 constexpr uint32_t kMaximumSeconds = 120 * 60;
 constexpr time_t kValidEpoch = 1700000000;
 constexpr time_t kRecoveryWindowSeconds = 10 * 60;
-constexpr const char *kFirmwareVersion = "0.98-arcade.3";
+constexpr const char *kFirmwareVersion = "0.98-arcade.4";
 
 Preferences timerPreferences;
 
@@ -357,6 +357,14 @@ bool ArcadeTimerManager::handleCenter()
     return true;
 }
 
+bool ArcadeTimerManager::handleCenterLong()
+{
+    if (state == ArcadeTimerState::Idle && !testAlarmActive)
+        return false;
+    dismiss();
+    return true;
+}
+
 bool ArcadeTimerManager::handleLeft()
 {
     centerCandidate = false;
@@ -527,7 +535,7 @@ void ArcadeTimerManager::publishCapability()
     doc["firmware"] = kFirmwareVersion;
     doc["max_minutes"] = 120;
     JsonArray features = doc.createNestedArray("features");
-    for (const char *feature : {"local_countdown", "local_buttons", "local_alarm", "plus_one", "minus_one", "recovery", "wake_display_restore"})
+    for (const char *feature : {"local_countdown", "local_buttons", "local_alarm", "plus_one", "minus_one", "recovery", "wake_display_restore", "hold_to_exit"})
         features.add(feature);
     String payload;
     serializeJson(doc, payload);
