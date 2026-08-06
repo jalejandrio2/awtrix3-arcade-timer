@@ -33,10 +33,23 @@ All topics are below the device's configured AWTRIX prefix:
 - `timer/config` retained input: schema, revision, default minutes, animation
   style, melody, and alarm enabled state.
 - `timer/test_alarm` input: starts a five-second local alarm test while idle.
+- `timer/usage/ack` input: removes one committed usage record from the device
+  queue by its `source_session_id`.
 - `stats/timer/capability` retained output: device-authority handshake.
 - `stats/timer` output: timer state, monotonic sequence, remaining time,
   recoverable epoch deadline, and whether the display must return to off.
 - `stats/timer/config` retained output: applied/rejected configuration revision.
+- `stats/timer/usage/<producer_id>-<session_id>` retained output: one finalized
+  session with UTC epochs, active seconds, outcome, and timing quality.
+- `stats/timer/usage/status` retained output: queue depth, capacity, and dropped
+  record count.
+
+Timer state is published only for state/configuration transitions and MQTT
+reconnects, never once per countdown second. Each physical start gets a stable
+producer/session identifier. Only locally measured running time is recorded;
+paused time and the completion alarm are excluded. Completed and cancelled
+sessions are retained in a 128-record flash queue and resent after reconnect
+until the admin commits and acknowledges them.
 
 The timer persists state in ESP32 Preferences. A running deadline resumes after
 power loss when network time becomes valid. Expirations no more than ten minutes
