@@ -66,6 +66,7 @@ void setup()
   digitalWrite(15, LOW);
   delay(2000);
   Serial.begin(115200);
+  setCpuFrequencyMhz(160);
   loadSettings();
   PeripheryManager.setup();
   ServerManager.loadSettings();
@@ -126,4 +127,5 @@ void loop()
   {
     MQTTManager.tick();
   }
+  delay(1);
 }

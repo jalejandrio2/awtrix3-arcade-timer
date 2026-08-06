@@ -6,6 +6,10 @@
  
 #define DEBUG
 
+constexpr uint32_t LDR_SAMPLE_INTERVAL_MS = 1000;
+constexpr uint32_t BATTERY_ENVIRONMENT_SAMPLE_INTERVAL_MS = 30000;
+constexpr uint8_t BRIGHTNESS_HYSTERESIS = 3;
+
 #ifdef DEBUG
 #define DEBUG_PRINTLN(x)    \
   {                         \
@@ -150,4 +154,9 @@ extern OverlayEffect GLOBAL_OVERLAY;
 extern String HOSTNAME;
 extern int WEB_PORT;
 extern bool BUZ_VOL;
+extern const char *WIFI_POWER_SAVE_MODE;
+extern float WIFI_TX_POWER_DBM;
+extern uint32_t FRAMES_SENT;
+extern uint32_t FRAMES_SKIPPED;
+extern float EFFECTIVE_FPS;
 #endif // Globals_H

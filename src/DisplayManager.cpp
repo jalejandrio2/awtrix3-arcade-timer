@@ -49,9 +49,29 @@ GifPlayer gif;
 uint16_t gifX, gifY;
 CRGB leds[MATRIX_WIDTH * MATRIX_HEIGHT];
 CRGB ledsCopy[MATRIX_WIDTH * MATRIX_HEIGHT];
+CRGB lastTransmittedLeds[MATRIX_WIDTH * MATRIX_HEIGHT];
 float actualBri;
+uint8_t effectiveBrightness = 70;
+uint8_t lastTransmittedBrightness = 255;
+bool transmittedFrameValid = false;
+uint32_t frameWindowStartedAt = 0;
+uint32_t frameWindowSent = 0;
 int16_t cursor_x, cursor_y;
 uint32_t textColor;
+
+void updateFrameMetrics()
+{
+  const uint32_t now = millis();
+  if (frameWindowStartedAt == 0)
+    frameWindowStartedAt = now;
+  const uint32_t elapsed = now - frameWindowStartedAt;
+  if (elapsed >= 1000)
+  {
+    EFFECTIVE_FPS = elapsed > 0 ? (frameWindowSent * 1000.0f) / elapsed : 0.0f;
+    frameWindowSent = 0;
+    frameWindowStartedAt = now;
+  }
+}
 
 // NeoMatrix
 FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(leds, 8, 8, 4, 1, NEO_MATRIX_TOP + NEO_MATRIX_LEFT + NEO_MATRIX_ROWS + NEO_MATRIX_PROGRESSIVE);
@@ -67,7 +87,7 @@ DisplayManager_ &DisplayManager = DisplayManager.getInstance();
 
 void DisplayManager_::setBrightness(int bri)
 {
-  bool wakeup;
+  bool wakeup = false;
   if (!notifications.empty())
   {
     wakeup = notifications[0].wakeup;
@@ -76,11 +96,13 @@ void DisplayManager_::setBrightness(int bri)
   if (MATRIX_OFF && !wakeup)
   {
     matrix->setBrightness(0);
+    effectiveBrightness = 0;
   }
   else
   {
     matrix->setBrightness(bri);
     actualBri = bri;
+    effectiveBrightness = constrain(bri, 0, 255);
   }
 }
 
@@ -143,7 +165,7 @@ void DisplayManager_::resetTextColor()
 void DisplayManager_::clearMatrix()
 {
   matrix->clear();
-  matrix->show();
+  show();
 }
 
 bool jpg_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap)
@@ -219,7 +241,7 @@ void DisplayManager_::HSVtext(int16_t x, int16_t y, const char *text, bool clear
   }
   hueOffset++;
   if (clear)
-    matrix->show();
+    show();
 }
 
 uint32_t interpolateColor(uint32_t color1, uint32_t color2, float t)
@@ -278,7 +300,7 @@ void DisplayManager_::GradientText(int16_t x, int16_t y, const char *text, int c
   }
 
   if (clear)
-    matrix->show();
+    show();
 }
 
 void pushCustomApp(String name, int position)
@@ -1215,16 +1237,29 @@ bool universe2_complete = false;
 
 void DisplayManager_::tick()
 {
+  updateFrameMetrics();
   ArcadeTimer.tick();
+  static unsigned long lastSpecialFrame = 0;
+  static unsigned long lastOffUiUpdate = 0;
+  const unsigned long now = millis();
+  const bool specialFrameDue = now - lastSpecialFrame >= (1000UL / MATRIX_FPS);
   if (GAME_ACTIVE)
   {
-    GameManager.tick();
-    matrix->show();
-    memcpy(ledsCopy, leds, sizeof(leds));
+    if (specialFrameDue)
+    {
+      GameManager.tick();
+      show();
+      memcpy(ledsCopy, leds, sizeof(leds));
+      lastSpecialFrame = now;
+    }
   }
   else if (AP_MODE)
   {
-    HSVtext(2, 6, "AP MODE", true, 1);
+    if (specialFrameDue)
+    {
+      HSVtext(2, 6, "AP MODE", true, 1);
+      lastSpecialFrame = now;
+    }
   }
   else if (ARTNET_MODE)
   {
@@ -1236,13 +1271,22 @@ void DisplayManager_::tick()
   }
   else if (ArcadeTimer.ownsDisplay())
   {
-    ArcadeTimer.render(matrix);
-    matrix->show();
-    memcpy(ledsCopy, leds, sizeof(leds));
+    if (specialFrameDue)
+    {
+      ArcadeTimer.render(matrix);
+      show();
+      memcpy(ledsCopy, leds, sizeof(leds));
+      lastSpecialFrame = now;
+    }
   }
   else
   {
-    ui->update();
+    if (!MATRIX_OFF || now - lastOffUiUpdate >= 1000)
+    {
+      ui->update();
+      if (MATRIX_OFF)
+        lastOffUiUpdate = now;
+    }
     if (ui->getUiState()->appState == IN_TRANSITION && !appIsSwitching)
     {
       appIsSwitching = true;
@@ -1305,7 +1349,8 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t *d
   if (universe == 10)
   {
     matrix->setBrightness(data[0]);
-    matrix->show();
+    effectiveBrightness = data[0];
+    DisplayManager.show();
   }
 
   // Store which universe has got in
@@ -1333,7 +1378,7 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t *d
 
   if (sendFrame)
   {
-    matrix->show();
+    DisplayManager.show();
     // Reset universeReceived to 0
     memset(universesReceived, 0, maxUniverses);
   }
@@ -1352,7 +1397,25 @@ void DisplayManager_::clear()
 
 void DisplayManager_::show()
 {
+  updateFrameMetrics();
+  const bool brightnessChanged = !transmittedFrameValid || effectiveBrightness != lastTransmittedBrightness;
+  if (MATRIX_OFF && !brightnessChanged)
+  {
+    ++FRAMES_SKIPPED;
+    return;
+  }
+  const bool pixelsChanged = !transmittedFrameValid || memcmp(lastTransmittedLeds, leds, sizeof(leds)) != 0;
+  if (!brightnessChanged && !pixelsChanged)
+  {
+    ++FRAMES_SKIPPED;
+    return;
+  }
   matrix->show();
+  memcpy(lastTransmittedLeds, leds, sizeof(leds));
+  lastTransmittedBrightness = effectiveBrightness;
+  transmittedFrameValid = true;
+  ++FRAMES_SENT;
+  ++frameWindowSent;
 }
 
 void DisplayManager_::leftButton()
@@ -1648,7 +1711,7 @@ void DisplayManager_::updateAppVector(const char *json)
 
 String DisplayManager_::getStats()
 {
-  StaticJsonDocument<1024> doc;
+  StaticJsonDocument<1536> doc;
   char buffer[20];
 
 #ifdef awtrix2_upgrade
@@ -1679,6 +1742,20 @@ String DisplayManager_::getStats()
   doc[F("uid")] = uniqueID;
   doc[F("matrix")] = !MATRIX_OFF;
   doc[IpAddrKey] = WiFi.localIP();
+  JsonObject power = doc.createNestedObject(F("power"));
+  power[F("wifi_ps")] = WIFI_POWER_SAVE_MODE;
+  power[F("tx_power_dbm")] = WIFI_TX_POWER_DBM;
+  power[F("cpu_mhz")] = getCpuFrequencyMhz();
+  power[F("target_fps")] = MATRIX_FPS;
+  power[F("effective_fps")] = EFFECTIVE_FPS;
+  power[F("frames_sent")] = FRAMES_SENT;
+  power[F("frames_skipped")] = FRAMES_SKIPPED;
+  power[F("effective_brightness")] = effectiveBrightness;
+  power[F("rssi")] = WiFi.RSSI();
+  JsonObject sampling = power.createNestedObject(F("sampling_ms"));
+  sampling[F("ldr")] = LDR_SAMPLE_INTERVAL_MS;
+  sampling[F("battery_environment")] = BATTERY_ENVIRONMENT_SAMPLE_INTERVAL_MS;
+  sampling[F("statistics")] = STATS_INTERVAL;
   String jsonString;
   serializeJson(doc, jsonString);
   return jsonString;
@@ -1767,10 +1844,12 @@ void DisplayManager_::setPower(bool state)
   }
   else
   {
-    MATRIX_OFF = true;
     showSleepAnimation();
+    MATRIX_OFF = true;
     setBrightness(0);
+    show();
   }
+  MQTTManager.sendStats();
 }
 
 void DisplayManager_::setIndicator1Color(uint32_t color)
@@ -2517,7 +2596,8 @@ bool DisplayManager_::moodlight(const char *json)
 
   MOODLIGHT_MODE = true;
   doc.clear();
-  matrix->show();
+  effectiveBrightness = constrain(brightness, 0, 255);
+  show();
   return true;
 }
 
