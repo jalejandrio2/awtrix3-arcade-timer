@@ -295,6 +295,10 @@ void loadSettings()
     MQTT_PREFIX = String(uniqueID);
     HOSTNAME = String(uniqueID);
     loadDevSettings();
+#ifdef ULANZI
+    // Battery-optimized builds intentionally publish full device statistics once per minute.
+    STATS_INTERVAL = 60000;
+#endif
 }
 
 void saveSettings()
@@ -348,7 +352,7 @@ IPAddress gateway;
 IPAddress subnet;
 IPAddress primaryDNS;
 IPAddress secondaryDNS;
-const char *VERSION = "0.98-arcade.3";
+const char *VERSION = "0.98-arcade.6";
 String MQTT_HOST = "";
 uint16_t MQTT_PORT = 1883;
 String MQTT_USER;
@@ -370,7 +374,7 @@ String NET_SN = "255.255.255.0";
 String NET_PDNS = "8.8.8.8";
 String NET_SDNS = "1.1.1.1";
 long TIME_PER_APP = 7000;
-uint8_t MATRIX_FPS = 42;
+uint8_t MATRIX_FPS = 30;
 int TIME_PER_TRANSITION = 400;
 String NTP_SERVER = "de.pool.ntp.org";
 String NTP_TZ = "CET-1CEST,M3.5.0,M10.5.0/3";
@@ -443,7 +447,7 @@ uint32_t TEMP_COLOR = 0;
 uint32_t HUM_COLOR = 0;
 bool ARTNET_MODE;
 bool MOODLIGHT_MODE;
-long STATS_INTERVAL = 10000;
+long STATS_INTERVAL = 60000;
 bool DEBUG_MODE = true;
 uint8_t MIN_BRIGHTNESS = 2;
 uint8_t MAX_BRIGHTNESS = 160;
@@ -463,3 +467,8 @@ int WEB_PORT = 80;
 OverlayEffect GLOBAL_OVERLAY = NONE;
 String HOSTNAME = "";
 bool BUZ_VOL = false;
+const char *WIFI_POWER_SAVE_MODE = "unknown";
+float WIFI_TX_POWER_DBM = 19.5f;
+uint32_t FRAMES_SENT = 0;
+uint32_t FRAMES_SKIPPED = 0;
+float EFFECTIVE_FPS = 0.0f;

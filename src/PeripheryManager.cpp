@@ -100,8 +100,8 @@ int readIndex = 0;
 int sampleIndex = 0;
 unsigned long previousMillis_BatTempHum = 0;
 unsigned long previousMillis_LDR = 0;
-const unsigned long interval_BatTempHum = 10000;
-const unsigned long interval_LDR = 100;
+const unsigned long interval_BatTempHum = BATTERY_ENVIRONMENT_SAMPLE_INTERVAL_MS;
+const unsigned long interval_LDR = LDR_SAMPLE_INTERVAL_MS;
 int total = 0;
 unsigned long startTime;
 
@@ -514,8 +514,15 @@ void PeripheryManager_::tick()
         {
             brightnessPercent = (LDR_RAW * LDR_FACTOR) / 1023.0 * 100.0;
             brightnessPercent = pow(brightnessPercent, LDR_GAMMA) / pow(100.0, LDR_GAMMA - 1);
-            BRIGHTNESS = map(brightnessPercent, 0, 100, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
-            DisplayManager.setBrightness(BRIGHTNESS);
+            const int targetBrightness = constrain(
+                map(brightnessPercent, 0, 100, MIN_BRIGHTNESS, MAX_BRIGHTNESS),
+                MIN_BRIGHTNESS,
+                MAX_BRIGHTNESS);
+            if (abs(targetBrightness - BRIGHTNESS) >= BRIGHTNESS_HYSTERESIS)
+            {
+                BRIGHTNESS = targetBrightness;
+                DisplayManager.setBrightness(BRIGHTNESS);
+            }
         }
     }
 }

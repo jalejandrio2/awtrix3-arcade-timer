@@ -8,6 +8,7 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include "DisplayManager.h"
+#include "MQTTManager.h"
 #include "UpdateManager.h"
 #include "PeripheryManager.h"
 #include "PowerManager.h"
@@ -15,6 +16,7 @@
 #include <HTTPClient.h>
 #include "Games/GameManager.h"
 #include <EEPROM.h>
+#include <esp_wifi.h>
 
 WiFiUDP udp;
 
@@ -33,6 +35,91 @@ FSWebServer mws(LittleFS, server);
 
 // Erstelle eine Server-Instanz
 WiFiServer TCPserver(8080);
+
+namespace
+{
+constexpr int8_t kTxPower11Dbm = 44;
+constexpr int8_t kTxPower15Dbm = 60;
+constexpr int8_t kTxPower19_5Dbm = 78;
+constexpr unsigned long kRadioReviewIntervalMs = 60000;
+int8_t currentTxPower = -1;
+unsigned long lastRadioReview = 0;
+wl_status_t previousWifiStatus = WL_NO_SHIELD;
+bool reconnectFallback = true;
+
+void setTransmitPower(int8_t quarterDbm)
+{
+    if (currentTxPower == quarterDbm)
+        return;
+    if (esp_wifi_set_max_tx_power(quarterDbm) == ESP_OK)
+    {
+        currentTxPower = quarterDbm;
+        WIFI_TX_POWER_DBM = quarterDbm / 4.0f;
+    }
+}
+
+void applyAdaptiveTransmitPower(bool force)
+{
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        reconnectFallback = true;
+        setTransmitPower(kTxPower19_5Dbm);
+        return;
+    }
+
+    const int rssi = WiFi.RSSI();
+    int8_t target = currentTxPower;
+    if (force || currentTxPower < 0)
+    {
+        target = rssi >= -60 ? kTxPower11Dbm : (rssi >= -72 ? kTxPower15Dbm : kTxPower19_5Dbm);
+    }
+    else if (currentTxPower == kTxPower11Dbm && rssi < -65)
+    {
+        target = rssi < -77 ? kTxPower19_5Dbm : kTxPower15Dbm;
+    }
+    else if (currentTxPower == kTxPower15Dbm)
+    {
+        if (rssi >= -55)
+            target = kTxPower11Dbm;
+        else if (rssi < -77)
+            target = kTxPower19_5Dbm;
+    }
+    else if (currentTxPower == kTxPower19_5Dbm && rssi >= -67)
+    {
+        target = rssi >= -55 ? kTxPower11Dbm : kTxPower15Dbm;
+    }
+
+    setTransmitPower(target);
+    reconnectFallback = false;
+    lastRadioReview = millis();
+}
+
+void maintainRadioPolicy()
+{
+    const wl_status_t status = WiFi.status();
+    if (status == WL_CONNECTED && !MQTTManager.isConnected())
+    {
+        reconnectFallback = true;
+        setTransmitPower(kTxPower19_5Dbm);
+        return;
+    }
+    if (status != previousWifiStatus)
+    {
+        previousWifiStatus = status;
+        applyAdaptiveTransmitPower(true);
+        return;
+    }
+    if (status == WL_CONNECTED && reconnectFallback)
+    {
+        applyAdaptiveTransmitPower(true);
+        return;
+    }
+    if (status == WL_CONNECTED && millis() - lastRadioReview >= kRadioReviewIntervalMs)
+        applyAdaptiveTransmitPower(false);
+    else if (status != WL_CONNECTED && !reconnectFallback)
+        applyAdaptiveTransmitPower(true);
+}
+}
 
 // The getter for the instantiated singleton instance
 ServerManager_ &ServerManager_::getInstance()
@@ -206,8 +293,7 @@ void addHandler()
 
 void ServerManager_::setup()
 {
-    esp_wifi_set_max_tx_power(80); // 82 * 0.25 dBm = 20.5 dBm
-    esp_wifi_set_ps(WIFI_PS_NONE); // Power Saving deaktivieren
+    setTransmitPower(kTxPower19_5Dbm);
     if (!local_IP.fromString(NET_IP) || !gateway.fromString(NET_GW) || !subnet.fromString(NET_SN) || !primaryDNS.fromString(NET_PDNS) || !secondaryDNS.fromString(NET_SDNS))
         NET_STATIC = false;
     if (NET_STATIC)
@@ -217,6 +303,9 @@ void ServerManager_::setup()
     WiFi.setHostname(HOSTNAME.c_str()); // define hostname
     myIP = mws.startWiFi(AP_TIMEOUT * 1000, HOSTNAME.c_str(), "12345678");
     isConnected = !(myIP == IPAddress(192, 168, 4, 1));
+    if (esp_wifi_set_ps(WIFI_PS_MIN_MODEM) == ESP_OK)
+        WIFI_POWER_SAVE_MODE = "min_modem";
+    applyAdaptiveTransmitPower(true);
     if (DEBUG_MODE)
         DEBUG_PRINTF("My IP: %d.%d.%d.%d", myIP[0], myIP[1], myIP[2], myIP[3]);
     mws.setAuth(AUTH_USER, AUTH_PASS);
@@ -280,6 +369,7 @@ void ServerManager_::setup()
 void ServerManager_::tick()
 {
     mws.run();
+    maintainRadioPolicy();
 
     if (!AP_MODE)
     {

@@ -12,6 +12,23 @@
 > recovery, local animations, a local buzzer alarm, and temporary display wake
 > with automatic off-state restoration. See
 > [ARCADE_TIMER.md](ARCADE_TIMER.md) for its behavior and MQTT contract.
+
+## Castro battery policy
+
+Release `0.98-arcade.6` keeps MQTT continuously connected and preserves every
+page, animation, transition, button action, timer, and alarm while reducing the
+always-on load. The TC001 runs at 160 MHz with a 30 FPS visual target, skips
+identical LED transmissions, samples the LDR once per second, samples battery
+and environment sensors every 30 seconds, and publishes full statistics once
+per minute. When the matrix is off, timer state continues to advance but normal
+UI rendering is reduced to once per second.
+
+Wi-Fi uses minimum modem sleep and an RSSI-dependent transmit cap: 11 dBm for a
+strong link, 15 dBm for a moderate link, and 19.5 dBm for a weak link or
+reconnection. Five-dB hysteresis prevents repeated switching near a threshold.
+The general statistics payload exposes this policy, CPU frequency, effective
+frame rate, sent/skipped LED frames, effective brightness, RSSI, and sampling
+intervals under the backward-compatible `power` object.
  
 <div align="center">
   
