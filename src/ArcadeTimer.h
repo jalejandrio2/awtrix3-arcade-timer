@@ -26,11 +26,25 @@ public:
     bool handleLeft();
     bool handleRight();
     void applyConfig(const char *json);
+    void acknowledgeUsage(const char *json);
     void testAlarm(const char *json);
     void onMqttConnected();
     const char *stateName() const;
 
 private:
+    static constexpr size_t kUsageQueueCapacity = 128;
+
+    struct UsageRecord
+    {
+        uint64_t producerId = 0;
+        uint32_t sessionId = 0;
+        int64_t startedAtEpoch = 0;
+        int64_t endedAtEpoch = 0;
+        uint32_t activeSeconds = 0;
+        uint8_t outcome = 0;
+        uint8_t timingQuality = 0;
+    };
+
     enum class Feedback : uint8_t
     {
         None,
@@ -54,7 +68,6 @@ private:
     uint32_t configRevision = 0;
     uint32_t sequence = 0;
     uint32_t bootId = 0;
-    uint32_t lastPublishedSecond = UINT32_MAX;
     uint32_t lastCenterMs = 0;
     bool centerCandidate = false;
     bool recoverable = false;
@@ -66,6 +79,18 @@ private:
     uint32_t testAlarmEndsMs = 0;
     String animationStyle = "playful_arcade";
     String melody = "arcade";
+    uint64_t producerId = 0;
+    uint32_t nextSessionId = 0;
+    uint32_t currentSessionId = 0;
+    int64_t sessionStartedEpoch = 0;
+    uint64_t activeMillis = 0;
+    int64_t activeSegmentStartedUs = 0;
+    int64_t activeSegmentStartedEpoch = 0;
+    bool sessionOpen = false;
+    bool sessionTimingExact = true;
+    UsageRecord usageQueue[kUsageQueueCapacity]{};
+    uint16_t usageCount = 0;
+    uint32_t droppedUsageRecords = 0;
 
     uint32_t remainingSeconds() const;
     bool timeValid() const;
@@ -79,8 +104,20 @@ private:
     void setFeedback(Feedback next, uint32_t durationMs);
     void updateAlarm();
     void stopTestAlarm();
+    void startActiveSegment();
+    void stopActiveSegment(int64_t endedAtEpoch = 0);
+    void finalizeSession(const char *outcome, int64_t endedAtEpoch = 0);
     void persist();
     void restore();
+    void persistUsageQueue();
+    void restoreUsageQueue();
+    void enqueueUsage(const UsageRecord &record);
+    void publishUsageRecord(const UsageRecord &record);
+    void publishPendingUsage();
+    void publishUsageStatus();
+    String producerIdText() const;
+    String usageSourceId(uint32_t sessionId) const;
+    String usageTopic(uint32_t sessionId) const;
     void publishCapability();
     void publishState(bool retained);
     void publishConfigAck(const char *status, const char *error = nullptr);

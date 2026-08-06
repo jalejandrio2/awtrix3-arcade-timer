@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TIMER = (ROOT / "src" / "ArcadeTimer.cpp").read_text(encoding="utf-8")
+TIMER_HEADER = (ROOT / "src" / "ArcadeTimer.h").read_text(encoding="utf-8")
 DISPLAY = (ROOT / "src" / "DisplayManager.cpp").read_text(encoding="utf-8")
 BUTTONS = (ROOT / "src" / "PeripheryManager.cpp").read_text(encoding="utf-8")
 MANIFEST_BUILDER = (ROOT / "scripts" / "check_firmware.py").read_text(encoding="utf-8")
@@ -42,6 +43,7 @@ def test_recovery_and_capability_contract() -> None:
         "recovery",
         "wake_display_restore",
         "hold_to_exit",
+        "usage_queue",
     ):
         assert f'"{feature}"' in TIMER
     assert "kRecoveryWindowSeconds = 10 * 60" in TIMER
@@ -53,8 +55,27 @@ def test_completion_alarm_auto_dismisses_after_ten_seconds() -> None:
     assert "ringingEndsMs = millis() + kAlarmDurationMs" in TIMER
     assert "nowMs - ringingEndsMs" in TIMER
     assert "dismiss();" in TIMER
-    assert 'kFirmwareVersion = "0.98-arcade.4"' in TIMER
-    assert '"version": "0.98-arcade.4"' in MANIFEST_BUILDER
+    assert 'kFirmwareVersion = "0.98-arcade.5"' in TIMER
+    assert '"version": "0.98-arcade.5"' in MANIFEST_BUILDER
+
+
+def test_timer_usage_is_transition_only_and_durable() -> None:
+    assert "publishState(false)" not in TIMER
+    assert "lastPublishedSecond" not in TIMER
+    assert "kUsageQueueCapacity = 128" in TIMER_HEADER
+    assert 'MQTTManager.publishRetained("stats/timer/usage/status"' in TIMER
+    assert '"source_session_id"' in TIMER
+    assert '"active_seconds"' in TIMER
+    assert '"timing_quality"' in TIMER
+    assert "acknowledgeUsage" in TIMER
+    assert 'timerPreferences.putBytes("usage_queue"' in TIMER
+
+
+def test_active_usage_excludes_pauses_and_alarm_time() -> None:
+    assert "stopActiveSegment();\n    deadlineUs = 0;" in TIMER
+    assert 'finalizeSession("completed", expiredEpoch);' in TIMER
+    assert 'finalizeSession("cancelled");' in TIMER
+    assert "(activeMillis + 500) / 1000" in TIMER
 
 
 def test_timer_wakes_and_restores_an_initially_dark_display() -> None:

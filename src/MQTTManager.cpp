@@ -63,6 +63,12 @@ void processMqttMessage(const String &strTopic, const String &payloadCopy)
         return;
     }
 
+    if (strTopic.equals(MQTT_PREFIX + "/timer/usage/ack"))
+    {
+        ArcadeTimer.acknowledgeUsage(payloadCopy.c_str());
+        return;
+    }
+
     if (strTopic.equals(MQTT_PREFIX + "/notify"))
     {
         if (payloadCopy[0] != '{' || payloadCopy[payloadCopy.length() - 1] != '}')
@@ -426,6 +432,7 @@ void onMqttConnected()
 
     mqtt.subscribe((MQTT_PREFIX + "/timer/config").c_str());
     mqtt.subscribe((MQTT_PREFIX + "/timer/test_alarm").c_str());
+    mqtt.subscribe((MQTT_PREFIX + "/timer/usage/ack").c_str());
 
     for (const auto &topic : topicsToSubscribe)
     {
