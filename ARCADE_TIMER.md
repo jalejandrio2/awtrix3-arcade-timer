@@ -17,7 +17,7 @@ Button bounce below 120 ms is ignored. While active, the timer owns the display
 and normal page rotation is suspended. The countdown uses the ESP32 monotonic
 clock and does not depend on MQTT updates.
 
-At expiry, the local buzzer and completion animation run for at most ten
+At expiry, the local buzzer and completion animation run for at most five
 seconds. Center dismisses them early; otherwise the timer resets itself and
 returns to normal rotation automatically.
 
