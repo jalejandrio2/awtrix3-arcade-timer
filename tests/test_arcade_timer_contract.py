@@ -53,10 +53,16 @@ def test_recovery_and_capability_contract() -> None:
 def test_completion_alarm_auto_dismisses_after_five_seconds() -> None:
     assert "kAlarmDurationMs = 5 * 1000" in TIMER
     assert "ringingEndsMs = millis() + kAlarmDurationMs" in TIMER
+    complete_start = TIMER.index("void ArcadeTimerManager::complete()")
+    complete_end = TIMER.index("void ArcadeTimerManager::dismiss()", complete_start)
+    complete = TIMER[complete_start:complete_end]
+    assert complete.index("publishState(true)") < complete.index(
+        "ringingEndsMs = millis() + kAlarmDurationMs"
+    )
     assert "nowMs - ringingEndsMs" in TIMER
     assert "dismiss();" in TIMER
-    assert 'kFirmwareVersion = "0.98-arcade.7"' in TIMER
-    assert '"version": "0.98-arcade.7"' in MANIFEST_BUILDER
+    assert 'kFirmwareVersion = "0.98-arcade.8"' in TIMER
+    assert '"version": "0.98-arcade.8"' in MANIFEST_BUILDER
 
 
 def test_timer_usage_is_transition_only_and_durable() -> None:
