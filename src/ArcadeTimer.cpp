@@ -15,11 +15,11 @@ namespace
 {
 constexpr uint32_t kDebounceMs = 120;
 constexpr uint32_t kDoublePressMs = 800;
-constexpr uint32_t kAlarmDurationMs = 10 * 1000;
+constexpr uint32_t kAlarmDurationMs = 5 * 1000;
 constexpr uint32_t kMaximumSeconds = 120 * 60;
 constexpr time_t kValidEpoch = 1700000000;
 constexpr time_t kRecoveryWindowSeconds = 10 * 60;
-constexpr const char *kFirmwareVersion = "0.98-arcade.6";
+constexpr const char *kFirmwareVersion = "0.98-arcade.7";
 constexpr uint8_t kUsageCompleted = 1;
 constexpr uint8_t kUsageCancelled = 2;
 constexpr uint8_t kTimingExact = 1;
