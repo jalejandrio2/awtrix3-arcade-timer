@@ -19,7 +19,7 @@ constexpr uint32_t kAlarmDurationMs = 5 * 1000;
 constexpr uint32_t kMaximumSeconds = 120 * 60;
 constexpr time_t kValidEpoch = 1700000000;
 constexpr time_t kRecoveryWindowSeconds = 10 * 60;
-constexpr const char *kFirmwareVersion = "0.98-arcade.7";
+constexpr const char *kFirmwareVersion = "0.98-arcade.8";
 constexpr uint8_t kUsageCompleted = 1;
 constexpr uint8_t kUsageCancelled = 2;
 constexpr uint8_t kTimingExact = 1;
@@ -304,7 +304,6 @@ void ArcadeTimerManager::complete()
 {
     stopActiveSegment(deadlineEpoch > 0 ? deadlineEpoch : 0);
     state = ArcadeTimerState::Ringing;
-    ringingEndsMs = millis() + kAlarmDurationMs;
     pausedSeconds = 0;
     expiredEpoch = deadlineEpoch > 0 ? deadlineEpoch : (timeValid() ? time(nullptr) : 0);
     deadlineUs = 0;
@@ -313,6 +312,9 @@ void ArcadeTimerManager::complete()
     finalizeSession("completed", expiredEpoch);
     persist();
     publishState(true);
+    // Completion bookkeeping can take hundreds of milliseconds. Start the
+    // deadline only after it finishes so the buzzer receives the full window.
+    ringingEndsMs = millis() + kAlarmDurationMs;
 }
 
 void ArcadeTimerManager::dismiss()
