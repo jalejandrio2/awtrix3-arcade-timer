@@ -6,6 +6,7 @@ TIMER = (ROOT / "src" / "ArcadeTimer.cpp").read_text(encoding="utf-8")
 TIMER_HEADER = (ROOT / "src" / "ArcadeTimer.h").read_text(encoding="utf-8")
 DISPLAY = (ROOT / "src" / "DisplayManager.cpp").read_text(encoding="utf-8")
 BUTTONS = (ROOT / "src" / "PeripheryManager.cpp").read_text(encoding="utf-8")
+MQTT = (ROOT / "src" / "MQTTManager.cpp").read_text(encoding="utf-8")
 MANIFEST_BUILDER = (ROOT / "scripts" / "check_firmware.py").read_text(encoding="utf-8")
 
 
@@ -61,8 +62,8 @@ def test_completion_alarm_auto_dismisses_after_five_seconds() -> None:
     )
     assert "nowMs - ringingEndsMs" in TIMER
     assert "dismiss();" in TIMER
-    assert 'kFirmwareVersion = "0.98-arcade.8"' in TIMER
-    assert '"version": "0.98-arcade.8"' in MANIFEST_BUILDER
+    assert 'kFirmwareVersion = "0.98-arcade.9"' in TIMER
+    assert '"version": "0.98-arcade.9"' in MANIFEST_BUILDER
 
 
 def test_timer_usage_is_transition_only_and_durable() -> None:
@@ -98,3 +99,49 @@ def test_upstream_ota_cannot_replace_custom_firmware() -> None:
     updater = (ROOT / "src" / "UpdateManager.cpp").read_text(encoding="utf-8")
     assert "Remote upstream update disabled" in mqtt
     assert "Upstream OTA is locked" in updater
+
+
+def test_remote_command_starts_only_the_configured_default_timer() -> None:
+    assert 'strTopic.equals(MQTT_PREFIX + "/timer/command")' in MQTT
+    assert "ArcadeTimer.handleRemoteCommand(payloadCopy.c_str());" in MQTT
+    assert 'mqtt.subscribe((MQTT_PREFIX + "/timer/command").c_str());' in MQTT
+    assert "HAMqtt exposes only its single-argument subscription API" in MQTT
+    assert "void handleRemoteCommand(const char *json);" in TIMER_HEADER
+    assert 'action != "start_default"' in TIMER
+    assert 'doc.containsKey("minutes")' in TIMER
+    assert 'doc.containsKey("seconds")' in TIMER
+    assert 'doc.containsKey("duration")' in TIMER
+    assert "isRemoteCommandFieldAllowed" in TIMER
+    assert "isRemoteCommandTokenValid" in TIMER
+    assert 'doc["issued_at"].is<int64_t>()' in TIMER
+    assert "kRemoteCommandMaximumAgeSeconds = 60" in TIMER
+    assert 'publishRemoteCommandAck("rejected", commandId, "stale_command")' in TIMER
+    assert "state != ArcadeTimerState::Idle || testAlarmActive" in TIMER
+    remote_start = TIMER.index("void ArcadeTimerManager::handleRemoteCommand")
+    remote_end = TIMER.index("void ArcadeTimerManager::applyConfig", remote_start)
+    handler = TIMER[remote_start:remote_end]
+    assert "start();" in handler
+    assert "handleCenter" not in handler
+
+
+def test_remote_command_is_bounded_deduplicated_and_acknowledged() -> None:
+    assert "kRemoteCommandHistoryCapacity" in TIMER_HEADER
+    assert "kRemoteCommandIdMaximumLength" in TIMER_HEADER
+    assert "rememberRemoteCommand" in TIMER
+    assert 'timerPreferences.putBytes("remote_hist", &candidate, sizeof(candidate))' in TIMER
+    assert "RemoteCommandHistoryBlob candidate = remoteCommandHistory" in TIMER
+    assert "candidate.checksum == checksum" in TIMER
+    assert "read == sizeof(candidate)" in TIMER
+    assert "written != sizeof(candidate)" in TIMER
+    assert '"dedupe_persistence_failed"' in TIMER
+    assert '"dedupe_history_untrusted"' in TIMER
+    assert 'MQTTManager.publish("stats/timer/command"' in TIMER
+    for status in ("started", "duplicate", "busy", "rejected"):
+        assert f'"{status}"' in TIMER
+    assert '"remote_start_default"' in TIMER
+
+
+def test_remote_start_release_is_versioned() -> None:
+    assert 'kFirmwareVersion = "0.98-arcade.9"' in TIMER
+    assert (ROOT / "version").read_text(encoding="utf-8").strip() == "0.98-arcade.9"
+    assert '"version": "0.98-arcade.9"' in MANIFEST_BUILDER

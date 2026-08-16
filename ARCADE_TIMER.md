@@ -32,6 +32,8 @@ All topics are below the device's configured AWTRIX prefix:
 
 - `timer/config` retained input: schema, revision, default minutes, animation
   style, melody, and alarm enabled state.
+- `timer/command` non-retained input: a strictly validated `start_default`
+  request. It accepts no duration; the device always uses its persisted default.
 - `timer/test_alarm` input: starts a five-second local alarm test while idle.
 - `timer/usage/ack` input: removes one committed usage record from the device
   queue by its `source_session_id`.
@@ -39,6 +41,8 @@ All topics are below the device's configured AWTRIX prefix:
 - `stats/timer` output: timer state, monotonic sequence, remaining time,
   recoverable epoch deadline, and whether the display must return to off.
 - `stats/timer/config` retained output: applied/rejected configuration revision.
+- `stats/timer/command` non-retained output: correlated `started`, `duplicate`,
+  `busy`, or `rejected` acknowledgement.
 - `stats/timer/usage/<producer_id>-<session_id>` retained output: one finalized
   session with UTC epochs, active seconds, outcome, and timing quality.
 - `stats/timer/usage/status` retained output: queue depth, capacity, and dropped
@@ -54,6 +58,29 @@ until the admin commits and acknowledges them.
 The timer persists state in ESP32 Preferences. A running deadline resumes after
 power loss when network time becomes valid. Expirations no more than ten minutes
 old ring on recovery; older expirations reset without a delayed alarm.
+
+### Remote default start
+
+Publish with QoS 1 and `retain=false`:
+
+```json
+{
+  "schema": 1,
+  "command_id": "a-unique-bounded-token",
+  "action": "start_default",
+  "source": "maximo_assist",
+  "issued_at": 1786881600
+}
+```
+
+The timer must be idle and device time must be valid. Commands older or more
+than 60 seconds ahead are rejected, preventing a retained or delayed command
+from starting a timer later. The last eight valid command IDs are persisted;
+QoS retransmission therefore cannot create a second session after reboot.
+Busy commands are consumed and acknowledged but never queued. `source` is audit
+metadata only—authorization belongs at the MQTT broker and caller. Additional
+fields, caller-provided durations, malformed tokens, and unsupported actions
+are rejected.
 
 ## Safe flashing
 
