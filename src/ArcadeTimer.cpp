@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <cstddef>
 #include <cstring>
 #include <esp_timer.h>
 #include <time.h>
@@ -19,7 +20,8 @@ constexpr uint32_t kAlarmDurationMs = 5 * 1000;
 constexpr uint32_t kMaximumSeconds = 120 * 60;
 constexpr time_t kValidEpoch = 1700000000;
 constexpr time_t kRecoveryWindowSeconds = 10 * 60;
-constexpr const char *kFirmwareVersion = "0.98-arcade.8";
+constexpr time_t kRemoteCommandMaximumAgeSeconds = 60;
+constexpr const char *kFirmwareVersion = "0.98-arcade.9";
 constexpr uint8_t kUsageCompleted = 1;
 constexpr uint8_t kUsageCancelled = 2;
 constexpr uint8_t kTimingExact = 1;
@@ -92,6 +94,40 @@ uint32_t urgencyColor(uint32_t remaining)
         return 0xFF9F1C;
     return 0x00F5D4;
 }
+
+bool isRemoteCommandFieldAllowed(const char *field)
+{
+    return strcmp(field, "schema") == 0 || strcmp(field, "command_id") == 0 ||
+           strcmp(field, "action") == 0 || strcmp(field, "source") == 0 ||
+           strcmp(field, "issued_at") == 0;
+}
+
+bool isRemoteCommandTokenValid(const String &value, size_t maximumLength)
+{
+    if (value.isEmpty() || value.length() > maximumLength)
+        return false;
+    for (size_t index = 0; index < value.length(); ++index)
+    {
+        char character = value[index];
+        bool alphaNumeric = (character >= 'a' && character <= 'z') ||
+                            (character >= 'A' && character <= 'Z') ||
+                            (character >= '0' && character <= '9');
+        if (!alphaNumeric && character != '_' && character != '-' && character != '.' && character != ':')
+            return false;
+    }
+    return true;
+}
+
+uint32_t remoteCommandHistoryChecksum(const uint8_t *bytes, size_t length)
+{
+    uint32_t checksum = 2166136261UL;
+    for (size_t index = 0; index < length; ++index)
+    {
+        checksum ^= bytes[index];
+        checksum *= 16777619UL;
+    }
+    return checksum;
+}
 } // namespace
 
 ArcadeTimerManager ArcadeTimer;
@@ -101,6 +137,7 @@ void ArcadeTimerManager::setup()
     bootId = esp_random();
     restore();
     restoreUsageQueue();
+    restoreRemoteCommandHistory();
     if (producerId == 0)
     {
         producerId = (static_cast<uint64_t>(esp_random()) << 32) | esp_random();
@@ -486,6 +523,147 @@ void ArcadeTimerManager::stopTestAlarm()
     alarmPlaying = false;
 }
 
+bool ArcadeTimerManager::isRemoteCommandKnown(const String &commandId) const
+{
+    for (uint8_t index = 0; index < remoteCommandHistory.count; ++index)
+        if (commandId == remoteCommandHistory.ids[index])
+            return true;
+    return false;
+}
+
+bool ArcadeTimerManager::rememberRemoteCommand(const String &commandId)
+{
+    RemoteCommandHistoryBlob candidate = remoteCommandHistory;
+    strlcpy(candidate.ids[candidate.next], commandId.c_str(),
+            sizeof(candidate.ids[candidate.next]));
+    candidate.next = (candidate.next + 1) % kRemoteCommandHistoryCapacity;
+    if (candidate.count < kRemoteCommandHistoryCapacity)
+        ++candidate.count;
+    candidate.checksum = remoteCommandHistoryChecksum(
+        reinterpret_cast<const uint8_t *>(&candidate),
+        offsetof(RemoteCommandHistoryBlob, checksum));
+    timerPreferences.begin("arcade_timer", false);
+    size_t written = timerPreferences.putBytes("remote_hist", &candidate, sizeof(candidate));
+    timerPreferences.end();
+    if (written != sizeof(candidate))
+        return false;
+    remoteCommandHistory = candidate;
+    return true;
+}
+
+void ArcadeTimerManager::restoreRemoteCommandHistory()
+{
+    RemoteCommandHistoryBlob candidate{};
+    timerPreferences.begin("arcade_timer", true);
+    size_t stored = timerPreferences.getBytesLength("remote_hist");
+    size_t read = 0;
+    if (stored == sizeof(candidate))
+        read = timerPreferences.getBytes("remote_hist", &candidate, sizeof(candidate));
+    timerPreferences.end();
+    uint32_t checksum = remoteCommandHistoryChecksum(
+        reinterpret_cast<const uint8_t *>(&candidate),
+        offsetof(RemoteCommandHistoryBlob, checksum));
+    bool valid = stored == sizeof(candidate) && read == sizeof(candidate) &&
+                 candidate.magic == kRemoteCommandHistoryMagic &&
+                 candidate.version == kRemoteCommandHistoryVersion &&
+                 candidate.count <= kRemoteCommandHistoryCapacity &&
+                 candidate.next < kRemoteCommandHistoryCapacity &&
+                 candidate.checksum == checksum;
+    if (!valid)
+    {
+        memset(&candidate, 0, sizeof(candidate));
+        candidate.magic = kRemoteCommandHistoryMagic;
+        candidate.version = kRemoteCommandHistoryVersion;
+        candidate.checksum = remoteCommandHistoryChecksum(
+            reinterpret_cast<const uint8_t *>(&candidate),
+            offsetof(RemoteCommandHistoryBlob, checksum));
+        // A missing blob is expected on first install. An unreadable/corrupt
+        // existing blob fails closed for longer than the command freshness
+        // window, after which every pre-boot command is necessarily stale.
+        if (stored != 0)
+            remoteCommandHistoryReadyMs = millis() +
+                                          (kRemoteCommandMaximumAgeSeconds + 1) * 1000;
+    }
+    for (uint8_t index = 0; index < kRemoteCommandHistoryCapacity; ++index)
+        candidate.ids[index][kRemoteCommandIdMaximumLength] = '\0';
+    remoteCommandHistory = candidate;
+}
+
+void ArcadeTimerManager::publishRemoteCommandAck(const char *status, const String &commandId,
+                                                  const char *reason)
+{
+    StaticJsonDocument<320> doc;
+    doc["schema"] = 1;
+    if (commandId.isEmpty())
+        doc["command_id"] = nullptr;
+    else
+        doc["command_id"] = commandId;
+    doc["status"] = status;
+    doc["reason"] = reason ? reason : nullptr;
+    doc["timer_status"] = stateName();
+    doc["default_minutes"] = defaultSeconds / 60;
+    doc["config_revision"] = configRevision;
+    doc["firmware"] = kFirmwareVersion;
+    String payload;
+    serializeJson(doc, payload);
+    MQTTManager.publish("stats/timer/command", payload.c_str());
+}
+
+void ArcadeTimerManager::handleRemoteCommand(const char *json)
+{
+    StaticJsonDocument<384> doc;
+    DeserializationError error = deserializeJson(doc, json);
+    String commandId = doc["command_id"] | "";
+    String source = doc["source"] | "";
+    String action = doc["action"] | "";
+    int64_t issuedAt = doc["issued_at"] | 0;
+    bool unexpectedField = false;
+    if (!error)
+        for (JsonPair field : doc.as<JsonObject>())
+            if (!isRemoteCommandFieldAllowed(field.key().c_str()))
+                unexpectedField = true;
+    if (error || !doc["schema"].is<int>() || doc["schema"].as<int>() != 1 ||
+        !doc["issued_at"].is<int64_t>() || action != "start_default" ||
+        !isRemoteCommandTokenValid(commandId, kRemoteCommandIdMaximumLength) ||
+        !isRemoteCommandTokenValid(source, kRemoteCommandSourceMaximumLength) || unexpectedField ||
+        doc.containsKey("minutes") || doc.containsKey("seconds") ||
+        doc.containsKey("duration"))
+    {
+        publishRemoteCommandAck("rejected", commandId, "invalid_command");
+        return;
+    }
+    if (isRemoteCommandKnown(commandId))
+    {
+        publishRemoteCommandAck("duplicate", commandId, "already_processed");
+        return;
+    }
+    int64_t nowEpoch = static_cast<int64_t>(time(nullptr));
+    if (remoteCommandHistoryReadyMs != 0 &&
+        static_cast<int32_t>(millis() - remoteCommandHistoryReadyMs) < 0)
+    {
+        publishRemoteCommandAck("rejected", commandId, "dedupe_history_untrusted");
+        return;
+    }
+    if (!timeValid() || issuedAt < nowEpoch - kRemoteCommandMaximumAgeSeconds ||
+        issuedAt > nowEpoch + kRemoteCommandMaximumAgeSeconds)
+    {
+        publishRemoteCommandAck("rejected", commandId, "stale_command");
+        return;
+    }
+    if (!rememberRemoteCommand(commandId))
+    {
+        publishRemoteCommandAck("rejected", commandId, "dedupe_persistence_failed");
+        return;
+    }
+    if (state != ArcadeTimerState::Idle || testAlarmActive)
+    {
+        publishRemoteCommandAck("busy", commandId, "timer_not_idle");
+        return;
+    }
+    start();
+    publishRemoteCommandAck("started", commandId);
+}
+
 void ArcadeTimerManager::startActiveSegment()
 {
     if (!sessionOpen || activeSegmentStartedUs != 0)
@@ -801,7 +979,7 @@ void ArcadeTimerManager::publishCapability()
     doc["firmware"] = kFirmwareVersion;
     doc["max_minutes"] = 120;
     JsonArray features = doc.createNestedArray("features");
-    for (const char *feature : {"local_countdown", "local_buttons", "local_alarm", "plus_one", "minus_one", "recovery", "wake_display_restore", "hold_to_exit", "usage_queue"})
+    for (const char *feature : {"local_countdown", "local_buttons", "local_alarm", "plus_one", "minus_one", "recovery", "wake_display_restore", "hold_to_exit", "usage_queue", "remote_start_default"})
         features.add(feature);
     String payload;
     serializeJson(doc, payload);

@@ -51,6 +51,12 @@ void processMqttMessage(const String &strTopic, const String &payloadCopy)
 
     ++RECEIVED_MESSAGES;
 
+    if (strTopic.equals(MQTT_PREFIX + "/timer/command"))
+    {
+        ArcadeTimer.handleRemoteCommand(payloadCopy.c_str());
+        return;
+    }
+
     if (strTopic.equals(MQTT_PREFIX + "/timer/config"))
     {
         ArcadeTimer.applyConfig(payloadCopy.c_str());
@@ -430,6 +436,10 @@ void onMqttConnected()
         delay(30);
     }
 
+    // HAMqtt exposes only its single-argument subscription API. The upstream
+    // HA-to-local bridge remains QoS 1; device acknowledgement makes a dropped
+    // final hop visible to the caller without unsafe blind retries.
+    mqtt.subscribe((MQTT_PREFIX + "/timer/command").c_str());
     mqtt.subscribe((MQTT_PREFIX + "/timer/config").c_str());
     mqtt.subscribe((MQTT_PREFIX + "/timer/test_alarm").c_str());
     mqtt.subscribe((MQTT_PREFIX + "/timer/usage/ack").c_str());

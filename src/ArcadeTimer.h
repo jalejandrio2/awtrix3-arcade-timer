@@ -25,6 +25,7 @@ public:
     bool handleCenterLong();
     bool handleLeft();
     bool handleRight();
+    void handleRemoteCommand(const char *json);
     void applyConfig(const char *json);
     void acknowledgeUsage(const char *json);
     void testAlarm(const char *json);
@@ -33,6 +34,22 @@ public:
 
 private:
     static constexpr size_t kUsageQueueCapacity = 128;
+    static constexpr size_t kRemoteCommandHistoryCapacity = 8;
+    static constexpr size_t kRemoteCommandIdMaximumLength = 64;
+    static constexpr size_t kRemoteCommandSourceMaximumLength = 32;
+    static constexpr uint32_t kRemoteCommandHistoryMagic = 0x41524339;
+    static constexpr uint8_t kRemoteCommandHistoryVersion = 1;
+
+    struct RemoteCommandHistoryBlob
+    {
+        uint32_t magic = 0;
+        uint8_t version = 0;
+        uint8_t count = 0;
+        uint8_t next = 0;
+        uint8_t reserved = 0;
+        char ids[kRemoteCommandHistoryCapacity][kRemoteCommandIdMaximumLength + 1]{};
+        uint32_t checksum = 0;
+    };
 
     struct UsageRecord
     {
@@ -91,6 +108,8 @@ private:
     UsageRecord usageQueue[kUsageQueueCapacity]{};
     uint16_t usageCount = 0;
     uint32_t droppedUsageRecords = 0;
+    RemoteCommandHistoryBlob remoteCommandHistory{};
+    uint32_t remoteCommandHistoryReadyMs = 0;
 
     uint32_t remainingSeconds() const;
     bool timeValid() const;
@@ -115,6 +134,11 @@ private:
     void publishUsageRecord(const UsageRecord &record);
     void publishPendingUsage();
     void publishUsageStatus();
+    bool isRemoteCommandKnown(const String &commandId) const;
+    bool rememberRemoteCommand(const String &commandId);
+    void restoreRemoteCommandHistory();
+    void publishRemoteCommandAck(const char *status, const String &commandId,
+                                 const char *reason = nullptr);
     String producerIdText() const;
     String usageSourceId(uint32_t sessionId) const;
     String usageTopic(uint32_t sessionId) const;
