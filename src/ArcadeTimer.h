@@ -38,7 +38,7 @@ private:
     static constexpr size_t kRemoteCommandIdMaximumLength = 64;
     static constexpr size_t kRemoteCommandSourceMaximumLength = 32;
     static constexpr uint32_t kRemoteCommandHistoryMagic = 0x41524339;
-    static constexpr uint8_t kRemoteCommandHistoryVersion = 1;
+    static constexpr uint8_t kRemoteCommandHistoryVersion = 2;
 
     struct RemoteCommandHistoryBlob
     {
@@ -46,10 +46,12 @@ private:
         uint8_t version = 0;
         uint8_t count = 0;
         uint8_t next = 0;
-        uint8_t reserved = 0;
-        char ids[kRemoteCommandHistoryCapacity][kRemoteCommandIdMaximumLength + 1]{};
+        uint8_t quarantined = 0;
+        uint64_t hashes[kRemoteCommandHistoryCapacity]{};
         uint32_t checksum = 0;
     };
+    static_assert(sizeof(RemoteCommandHistoryBlob) <= 128,
+                  "Remote command history must remain a compact NVS blob");
 
     struct UsageRecord
     {
@@ -135,6 +137,7 @@ private:
     void publishPendingUsage();
     void publishUsageStatus();
     bool isRemoteCommandKnown(const String &commandId) const;
+    bool persistRemoteCommandHistory(const RemoteCommandHistoryBlob &candidate);
     bool rememberRemoteCommand(const String &commandId);
     void restoreRemoteCommandHistory();
     void publishRemoteCommandAck(const char *status, const String &commandId,

@@ -21,7 +21,8 @@ constexpr uint32_t kMaximumSeconds = 120 * 60;
 constexpr time_t kValidEpoch = 1700000000;
 constexpr time_t kRecoveryWindowSeconds = 10 * 60;
 constexpr time_t kRemoteCommandMaximumAgeSeconds = 60;
-constexpr const char *kFirmwareVersion = "0.98-arcade.9";
+constexpr time_t kRemoteCommandQuarantineSeconds = kRemoteCommandMaximumAgeSeconds * 2 + 1;
+constexpr const char *kFirmwareVersion = "0.98-arcade.10";
 constexpr uint8_t kUsageCompleted = 1;
 constexpr uint8_t kUsageCancelled = 2;
 constexpr uint8_t kTimingExact = 1;
@@ -116,6 +117,17 @@ bool isRemoteCommandTokenValid(const String &value, size_t maximumLength)
             return false;
     }
     return true;
+}
+
+uint64_t remoteCommandHash(const String &value)
+{
+    uint64_t hash = 1469598103934665603ULL;
+    for (size_t index = 0; index < value.length(); ++index)
+    {
+        hash ^= static_cast<uint8_t>(value[index]);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
 }
 
 uint32_t remoteCommandHistoryChecksum(const uint8_t *bytes, size_t length)
@@ -525,27 +537,50 @@ void ArcadeTimerManager::stopTestAlarm()
 
 bool ArcadeTimerManager::isRemoteCommandKnown(const String &commandId) const
 {
+    uint64_t hash = remoteCommandHash(commandId);
     for (uint8_t index = 0; index < remoteCommandHistory.count; ++index)
-        if (commandId == remoteCommandHistory.ids[index])
+        if (hash == remoteCommandHistory.hashes[index])
             return true;
     return false;
+}
+
+bool ArcadeTimerManager::persistRemoteCommandHistory(const RemoteCommandHistoryBlob &candidate)
+{
+    if (!timerPreferences.begin("arcade_timer", false))
+        return false;
+    size_t written = timerPreferences.putBytes("remote_hist", &candidate, sizeof(candidate));
+    timerPreferences.end();
+    if (written != sizeof(candidate))
+        return false;
+
+    RemoteCommandHistoryBlob verified{};
+    if (!timerPreferences.begin("arcade_timer", true))
+        return false;
+    size_t stored = timerPreferences.getBytesLength("remote_hist");
+    size_t read = 0;
+    if (stored == sizeof(verified))
+        read = timerPreferences.getBytes("remote_hist", &verified, sizeof(verified));
+    timerPreferences.end();
+    uint32_t verifiedChecksum = remoteCommandHistoryChecksum(
+        reinterpret_cast<const uint8_t *>(&verified),
+        offsetof(RemoteCommandHistoryBlob, checksum));
+    return stored == sizeof(candidate) && read == sizeof(candidate) &&
+           memcmp(&verified, &candidate, sizeof(candidate)) == 0 &&
+           verified.checksum == verifiedChecksum;
 }
 
 bool ArcadeTimerManager::rememberRemoteCommand(const String &commandId)
 {
     RemoteCommandHistoryBlob candidate = remoteCommandHistory;
-    strlcpy(candidate.ids[candidate.next], commandId.c_str(),
-            sizeof(candidate.ids[candidate.next]));
+    candidate.quarantined = 0;
+    candidate.hashes[candidate.next] = remoteCommandHash(commandId);
     candidate.next = (candidate.next + 1) % kRemoteCommandHistoryCapacity;
     if (candidate.count < kRemoteCommandHistoryCapacity)
         ++candidate.count;
     candidate.checksum = remoteCommandHistoryChecksum(
         reinterpret_cast<const uint8_t *>(&candidate),
         offsetof(RemoteCommandHistoryBlob, checksum));
-    timerPreferences.begin("arcade_timer", false);
-    size_t written = timerPreferences.putBytes("remote_hist", &candidate, sizeof(candidate));
-    timerPreferences.end();
-    if (written != sizeof(candidate))
+    if (!persistRemoteCommandHistory(candidate))
         return false;
     remoteCommandHistory = candidate;
     return true;
@@ -554,12 +589,16 @@ bool ArcadeTimerManager::rememberRemoteCommand(const String &commandId)
 void ArcadeTimerManager::restoreRemoteCommandHistory()
 {
     RemoteCommandHistoryBlob candidate{};
-    timerPreferences.begin("arcade_timer", true);
-    size_t stored = timerPreferences.getBytesLength("remote_hist");
+    size_t stored = 0;
     size_t read = 0;
-    if (stored == sizeof(candidate))
-        read = timerPreferences.getBytes("remote_hist", &candidate, sizeof(candidate));
-    timerPreferences.end();
+    bool opened = timerPreferences.begin("arcade_timer", true);
+    if (opened)
+    {
+        stored = timerPreferences.getBytesLength("remote_hist");
+        if (stored == sizeof(candidate))
+            read = timerPreferences.getBytes("remote_hist", &candidate, sizeof(candidate));
+        timerPreferences.end();
+    }
     uint32_t checksum = remoteCommandHistoryChecksum(
         reinterpret_cast<const uint8_t *>(&candidate),
         offsetof(RemoteCommandHistoryBlob, checksum));
@@ -568,24 +607,33 @@ void ArcadeTimerManager::restoreRemoteCommandHistory()
                  candidate.version == kRemoteCommandHistoryVersion &&
                  candidate.count <= kRemoteCommandHistoryCapacity &&
                  candidate.next < kRemoteCommandHistoryCapacity &&
+                 candidate.quarantined <= 1 &&
                  candidate.checksum == checksum;
     if (!valid)
     {
         memset(&candidate, 0, sizeof(candidate));
         candidate.magic = kRemoteCommandHistoryMagic;
         candidate.version = kRemoteCommandHistoryVersion;
+        // Missing, unreadable, wrong-type, corrupt, and incompatible histories
+        // all fail closed. The compact persistent quarantine marker is written
+        // when possible; otherwise every reboot reconstructs the quarantine in
+        // RAM and no command can be accepted until a verified write succeeds.
+        candidate.quarantined = 1;
         candidate.checksum = remoteCommandHistoryChecksum(
             reinterpret_cast<const uint8_t *>(&candidate),
             offsetof(RemoteCommandHistoryBlob, checksum));
-        // A missing blob is expected on first install. An unreadable/corrupt
-        // existing blob fails closed for longer than the command freshness
-        // window, after which every pre-boot command is necessarily stale.
-        if (stored != 0)
-            remoteCommandHistoryReadyMs = millis() +
-                                          (kRemoteCommandMaximumAgeSeconds + 1) * 1000;
+        remoteCommandHistoryReadyMs = millis() +
+                                      kRemoteCommandQuarantineSeconds * 1000;
+        persistRemoteCommandHistory(candidate);
     }
-    for (uint8_t index = 0; index < kRemoteCommandHistoryCapacity; ++index)
-        candidate.ids[index][kRemoteCommandIdMaximumLength] = '\0';
+    else if (candidate.quarantined != 0)
+    {
+        // A reboot while quarantined restarts the full fail-closed window. The
+        // first fresh command after the window clears the marker only as part of
+        // its own verified dedupe write.
+        remoteCommandHistoryReadyMs = millis() +
+                                      kRemoteCommandQuarantineSeconds * 1000;
+    }
     remoteCommandHistory = candidate;
 }
 
@@ -638,7 +686,7 @@ void ArcadeTimerManager::handleRemoteCommand(const char *json)
         return;
     }
     int64_t nowEpoch = static_cast<int64_t>(time(nullptr));
-    if (remoteCommandHistoryReadyMs != 0 &&
+    if (remoteCommandHistory.quarantined != 0 &&
         static_cast<int32_t>(millis() - remoteCommandHistoryReadyMs) < 0)
     {
         publishRemoteCommandAck("rejected", commandId, "dedupe_history_untrusted");

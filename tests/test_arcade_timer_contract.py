@@ -62,8 +62,8 @@ def test_completion_alarm_auto_dismisses_after_five_seconds() -> None:
     )
     assert "nowMs - ringingEndsMs" in TIMER
     assert "dismiss();" in TIMER
-    assert 'kFirmwareVersion = "0.98-arcade.9"' in TIMER
-    assert '"version": "0.98-arcade.9"' in MANIFEST_BUILDER
+    assert 'kFirmwareVersion = "0.98-arcade.10"' in TIMER
+    assert '"version": "0.98-arcade.10"' in MANIFEST_BUILDER
 
 
 def test_timer_usage_is_transition_only_and_durable() -> None:
@@ -127,11 +127,27 @@ def test_remote_command_starts_only_the_configured_default_timer() -> None:
 def test_remote_command_is_bounded_deduplicated_and_acknowledged() -> None:
     assert "kRemoteCommandHistoryCapacity" in TIMER_HEADER
     assert "kRemoteCommandIdMaximumLength" in TIMER_HEADER
+    assert "kRemoteCommandHistoryVersion = 2" in TIMER_HEADER
+    assert "uint64_t hashes[kRemoteCommandHistoryCapacity]" in TIMER_HEADER
+    assert "uint8_t quarantined" in TIMER_HEADER
+    assert "char ids[kRemoteCommandHistoryCapacity]" not in TIMER_HEADER
+    assert "static_assert(sizeof(RemoteCommandHistoryBlob) <= 128" in TIMER_HEADER
+    assert "remoteCommandHash" in TIMER
     assert "rememberRemoteCommand" in TIMER
     assert 'timerPreferences.putBytes("remote_hist", &candidate, sizeof(candidate))' in TIMER
     assert "RemoteCommandHistoryBlob candidate = remoteCommandHistory" in TIMER
     assert "candidate.checksum == checksum" in TIMER
     assert "read == sizeof(candidate)" in TIMER
+    assert "memcmp(&verified, &candidate, sizeof(candidate))" in TIMER
+    assert "verified.checksum == verifiedChecksum" in TIMER
+    assert "kRemoteCommandQuarantineSeconds = kRemoteCommandMaximumAgeSeconds * 2 + 1" in TIMER
+    assert "remoteCommandHistory.quarantined != 0" in TIMER
+    assert "candidate.quarantined = 1" in TIMER
+    assert "if (candidate.quarantined != 0)" in TIMER
+    assert "persistRemoteCommandHistory(candidate)" in TIMER
+    assert 'if (!timerPreferences.begin("arcade_timer", false))' in TIMER
+    assert 'if (!timerPreferences.begin("arcade_timer", true))' in TIMER
+    assert 'timerPreferences.remove("remote_hist")' not in TIMER
     assert "written != sizeof(candidate)" in TIMER
     assert '"dedupe_persistence_failed"' in TIMER
     assert '"dedupe_history_untrusted"' in TIMER
@@ -142,6 +158,6 @@ def test_remote_command_is_bounded_deduplicated_and_acknowledged() -> None:
 
 
 def test_remote_start_release_is_versioned() -> None:
-    assert 'kFirmwareVersion = "0.98-arcade.9"' in TIMER
-    assert (ROOT / "version").read_text(encoding="utf-8").strip() == "0.98-arcade.9"
-    assert '"version": "0.98-arcade.9"' in MANIFEST_BUILDER
+    assert 'kFirmwareVersion = "0.98-arcade.10"' in TIMER
+    assert (ROOT / "version").read_text(encoding="utf-8").strip() == "0.98-arcade.10"
+    assert '"version": "0.98-arcade.10"' in MANIFEST_BUILDER
